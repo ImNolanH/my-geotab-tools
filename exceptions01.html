@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Exceptions Summary</title>
+  <title>Scorecard Analysis(Beta)</title>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
     var link = document.createElement('link');
@@ -14,7 +14,7 @@
 <body style="margin:0; font-family:Arial,sans-serif; background-color:#f5f6f8; color:#333;">
   
   <div id="app-container" style="padding:20px;">
-    <h2 style="margin-top:0; border-bottom:1px solid #ccc; padding-bottom:10px;">Exceptions Summary</h2>
+    <h2 style="margin-top:0; border-bottom:1px solid #ccc; padding-bottom:10px;">Scorecard Analysis(Beta)</h2>
     
     <div style="background:#fff; padding:15px; border:1px solid #e0e0e0; border-radius:4px; margin-bottom:20px; display:flex; align-items:center; gap:15px; flex-wrap:wrap;">
       <div>
@@ -61,7 +61,7 @@
     <div id="intro-state" style="padding:40px 20px; text-align:center; background:#fff; border:1px solid #e0e0e0; border-radius:4px; margin-bottom:20px;">
       <h3 style="margin-top:0; color:#1e3a8a; font-size:20px;">📍 Safety Exceptions Analyzer</h3>
       <p style="color:#555; max-width:650px; margin:0 auto 15px auto; line-height:1.6; font-size:14px;">
-        Welcome to the vehicle and driver safety dashboard. This tool specifically isolates and tracks your fleet's three most critical safety rules: <b>Harsh Braking</b>, <b>Seatbelt Exceptions</b>, and <b>Speeding (>10% over for 20s)</b>.
+        Welcome to the vehicle and driver safety dashboard. This tool specifically isolates and tracks your fleet's three scorecard safety rules: <b>Harsh Braking</b>, <b>Seatbelt</b>, and <b>Speeding</b>.
       </p>
       <p style="color:#555; max-width:650px; margin:0 auto; line-height:1.6; font-size:14px;">
         Use the filters above to refine your timeframe, organization group, driver, or specific safety rule. Click <b>Load Data</b> to generate a vehicle-centric or driver-centric breakdown and analyze exactly where these events are happening on the map.
@@ -265,7 +265,7 @@
       btnContainer.style.cssText = 'margin-bottom:15px; display:flex; gap:10px;';
       
       var btnAnalyze = document.createElement('button');
-      btnAnalyze.textContent = '📍 Analyze Locations (Pins)';
+      btnAnalyze.textContent = '📍 Analyze Locations (OSM)';
       btnAnalyze.style.cssText = 'background:#10b981; color:#fff; border:none; padding:8px 16px; border-radius:4px; cursor:pointer; font-weight:bold;';
       btnAnalyze.onclick = function(e) { e.stopPropagation(); triggerHotspotAnalysis(hId, allEvents, 200); };
       btnContainer.appendChild(btnAnalyze);
@@ -660,3 +660,4 @@
   </script>
 </body>
 </html>
+
