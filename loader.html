@@ -1,56 +1,108 @@
 <!DOCTYPE html>
 <html>
-<head><meta charset="utf-8"></head>
-<body style="margin:0; padding:20px; font-family:sans-serif; background:#f8fafc;">
-    
-    <div id="setup-ui">
-        <h1>Fleet Health Dashboard</h1>
-        <div style="margin-bottom:20px;">
-            <select id="group-select" onchange="window.fetchData()"><option>Loading...</option></select>
-            <select id="status-select" onchange="window.fetchData()">
-                <option value="-1">All Active</option>
-                <option value="15">15+ Days</option>
-            </select>
+<head>
+    <meta charset="utf-8">
+    <title>Fleet Health Dashboard</title>
+</head>
+<body style="margin:0; padding:24px; font-family:sans-serif; background:#f8fafc; color:#0f172a;">
+
+    <div id="main-content">
+        <h1 style="margin:0 0 20px 0; font-size:24px;">Fleet Health Dashboard</h1>
+        
+        <div style="background:white; padding:20px; border-radius:12px; border:1px solid #e2e8f0; margin-bottom:24px; display:flex; gap:20px;">
+            <div style="flex:1;">
+                <label style="display:block; font-size:14px; font-weight:600; margin-bottom:8px;">Group Filter</label>
+                <select id="group-select" style="width:100%; padding:10px; border-radius:8px; border:1px solid #cbd5e1;" onchange="window.fetchData()"></select>
+            </div>
+            <div style="flex:1;">
+                <label style="display:block; font-size:14px; font-weight:600; margin-bottom:8px;">Threshold</label>
+                <select id="status-select" style="width:100%; padding:10px; border-radius:8px; border:1px solid #cbd5e1;" onchange="window.fetchData()">
+                    <option value="-1">All Active</option>
+                    <option value="15">15+ Days Offline</option>
+                    <option value="30">30+ Days Offline</option>
+                </select>
+            </div>
         </div>
-        <div style="display:flex; gap:20px;">
-            <div id="devices-container" style="flex:1; background:white; padding:15px; border-radius:8px;"></div>
-            <div id="users-container" style="flex:1; background:white; padding:15px; border-radius:8px;"></div>
+
+        <div style="display:flex; gap:24px;">
+            <div style="flex:1; background:white; border-radius:12px; border:1px solid #e2e8f0; overflow:hidden;">
+                <div style="background:#f1f5f9; padding:16px; font-weight:700; border-bottom:1px solid #e2e8f0;">Assets</div>
+                <div id="devices-container" style="padding:10px 20px;"></div>
+            </div>
+            <div style="flex:1; background:white; border-radius:12px; border:1px solid #e2e8f0; overflow:hidden;">
+                <div style="background:#f1f5f9; padding:16px; font-weight:700; border-bottom:1px solid #e2e8f0;">Drivers</div>
+                <div id="users-container" style="padding:10px 20px;"></div>
+            </div>
         </div>
     </div>
 
-    <div id="loading-overlay" style="position:fixed; top:0; left:0; width:100%; height:100%; background:white; display:flex; justify-content:center; align-items:center; z-index:999;">
-        <div style="text-align:center;">
-            <div style="border:4px solid #f3f3f3; border-top:4px solid #3498db; border-radius:50%; width:40px; height:40px; animation:spin 2s linear infinite; margin:0 auto 10px;"></div>
-            <p>Syncing Latest GitHub Version...</p>
-        </div>
+    <div id="debug-ui" style="position:fixed; bottom:0; left:0; right:0; text-align:center;">
+        <button onclick="var d=document.getElementById('debug-log');d.style.display=d.style.display==='none'?'block':'none';" style="background:#e74c3c;color:#fff;border:none;padding:4px 16px;cursor:pointer;font-size:12px;border-radius:4px 4px 0 0;">Toggle Log</button>
+        <button onclick="copyDebugData()" style="background:#f39c12;color:#fff;border:none;padding:4px 16px;cursor:pointer;font-size:12px;border-radius:4px 4px 0 0;margin-left:4px;">Copy Debug Data</button>
+        <pre id="debug-log" style="display:none;background:#1e1e1e;color:#0f0;padding:10px;margin:0;max-height:150px;overflow-y:auto;text-align:left;font-size:11px;"></pre>
     </div>
-
-    <style>@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }</style>
 
     <script>
-    geotab.addin['fleet-health-auto'] = function() {
-        return {
-            initialize: function(api, state, callback) {
-                var scriptUrl = 'https://imnolanh.github.io/my-geotab-tools/fleet-health-logic.js?t=' + new Date().getTime();
-                var script = document.createElement('script');
-                script.src = scriptUrl;
-                script.onload = function() {
-                    document.getElementById('loading-overlay').style.display = 'none';
-                    if (window.initFleetHealth) {
-                        window.initFleetHealth(api, state, callback);
-                    } else {
-                        alert('Logic file loaded but init function not found.');
-                        callback();
-                    }
-                };
-                script.onerror = function() {
-                    alert('Could not load logic file from GitHub.');
-                    callback();
-                };
-                document.head.appendChild(script);
+        var _debugData = {};
+        var _groupMap = {};
+
+        function debugLog(msg) {
+            var el = document.getElementById('debug-log');
+            if (el) {
+                el.textContent += '[' + new Date().toLocaleTimeString() + '] ' + msg + '\n';
+                el.scrollTop = el.scrollHeight;
             }
+        }
+
+        function copyDebugData() {
+            var t = document.createElement('textarea');
+            t.value = JSON.stringify(_debugData, null, 2);
+            document.body.appendChild(t); t.select();
+            document.execCommand('copy'); document.body.removeChild(t);
+            alert('Debug data copied!');
+        }
+
+        // Add-In Registration
+        geotab.addin['fleet-health-hosted'] = function() {
+            var apiRef;
+
+            window.fetchData = function() {
+                debugLog('Fetching data...');
+                var groupId = document.getElementById('group-select').value;
+                apiRef.multiCall([
+                    ['Get', { typeName: 'Device' }],
+                    ['Get', { typeName: 'DeviceStatusInfo' }],
+                    ['Get', { typeName: 'User', search: { isDriver: true } }]
+                ], function(results) {
+                    debugLog('Data received. Rendering...');
+                    document.getElementById('devices-container').innerHTML = 'Found ' + results[0].length + ' devices.';
+                    document.getElementById('users-container').innerHTML = 'Found ' + results[2].length + ' drivers.';
+                    _debugData.lastCount = results[0].length;
+                }, function(err) {
+                    debugLog('API ERROR: ' + err);
+                });
+            };
+
+            return {
+                initialize: function(api, state, callback) {
+                    apiRef = api;
+                    debugLog('Initializing...');
+                    api.call('Get', { typeName: 'Group' }, function(groups) {
+                        var select = document.getElementById('group-select');
+                        select.innerHTML = '<option value="all">All Groups</option>';
+                        groups.forEach(function(g) {
+                            var opt = document.createElement('option');
+                            opt.value = g.id; opt.textContent = g.name || g.id;
+                            select.appendChild(opt);
+                        });
+                        window.fetchData();
+                    });
+                    callback();
+                },
+                focus: function() {},
+                blur: function() {}
+            };
         };
-    };
     </script>
 </body>
 </html>
