@@ -14,7 +14,7 @@
 <body style="margin:0; font-family:Arial,sans-serif; background-color:#f5f6f8; color:#333;">
   
   <div id="app-container" style="padding:20px;">
-    <h2 style="margin-top:0; border-bottom:1px solid #ccc; padding-bottom:10px;">Exceptions Summary</h2>
+    <h2 style="margin-top:0; border-bottom:1px solid #ccc; padding-bottom:10px;">Driver Scorecard Analysis</h2>
     
     <div style="background:#fff; padding:15px; border:1px solid #e0e0e0; border-radius:4px; margin-bottom:20px; display:flex; align-items:center; gap:15px; flex-wrap:wrap;">
       <div>
@@ -59,7 +59,7 @@
     </div>
 
     <div id="intro-state" style="padding:40px 20px; text-align:center; background:#fff; border:1px solid #e0e0e0; border-radius:4px; margin-bottom:20px;">
-      <h3 style="margin-top:0; color:#1e3a8a; font-size:20px;">?? Safety Exceptions Analyzer</h3>
+      <h3 style="margin-top:0; color:#1e3a8a; font-size:20px;">📍 Safety Exceptions Analyzer</h3>
       <p style="color:#555; max-width:650px; margin:0 auto 15px auto; line-height:1.6; font-size:14px;">
         Welcome to the vehicle and driver safety dashboard. This tool specifically isolates and tracks your fleet's three most critical safety rules: <b>Harsh Braking</b>, <b>Seatbelt Exceptions</b>, and <b>Speeding (>10% over for 20s)</b>.
       </p>
@@ -265,7 +265,7 @@
       btnContainer.style.cssText = 'margin-bottom:15px; display:flex; gap:10px;';
       
       var btnAnalyze = document.createElement('button');
-      btnAnalyze.textContent = '?? Analyze Locations (Pins)';
+      btnAnalyze.textContent = '📍 Analyze Locations (Pins)';
       btnAnalyze.style.cssText = 'background:#10b981; color:#fff; border:none; padding:8px 16px; border-radius:4px; cursor:pointer; font-weight:bold;';
       btnAnalyze.onclick = function(e) { e.stopPropagation(); triggerHotspotAnalysis(hId, allEvents, 200); };
       btnContainer.appendChild(btnAnalyze);
@@ -485,7 +485,7 @@
           
           var tdIcon = document.createElement('td');
           tdIcon.style.cssText = 'padding:12px; color:#888; text-align:center; user-select:none;';
-          tdIcon.textContent = '?';
+          tdIcon.textContent = '▶';
           
           var tdName = document.createElement('td'); tdName.style.padding = '12px 15px'; tdName.textContent = stat.name;
           var tdCount = document.createElement('td'); tdCount.style.padding = '12px 15px'; tdCount.textContent = stat.count;
@@ -611,3 +611,4 @@
 </body>
 
 </html>
+
