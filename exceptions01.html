@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Scorecard Analysis(Beta)</title>
+  <title>Exceptions Summary</title>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
     var link = document.createElement('link');
@@ -14,7 +14,7 @@
 <body style="margin:0; font-family:Arial,sans-serif; background-color:#f5f6f8; color:#333;">
   
   <div id="app-container" style="padding:20px;">
-    <h2 style="margin-top:0; border-bottom:1px solid #ccc; padding-bottom:10px;">Scorecard Analysis</h2>
+    <h2 style="margin-top:0; border-bottom:1px solid #ccc; padding-bottom:10px;">Exceptions Summary</h2>
     
     <div style="background:#fff; padding:15px; border:1px solid #e0e0e0; border-radius:4px; margin-bottom:20px; display:flex; align-items:center; gap:15px; flex-wrap:wrap;">
       <div>
@@ -96,7 +96,7 @@
   <script>
     var _debugData = {};
     var maps = { rule: {}, device: {}, user: {}, group: {} };
-    var targetRuleIds = {};
+    var activeRuleMap = {}; // Global dictionary for current DB rules
     var myApi = null;
 
     function debugLog(msg) {
@@ -284,7 +284,9 @@
 
         var dev = maps.device[ev.device.id] || { name: 'Unknown Device' };
         var usr = maps.user[ev.driver ? ev.driver.id : ''] || {};
-        var rName = maps.rule[ev.rule.id] ? maps.rule[ev.rule.id].name : 'Unknown Rule';
+        
+        // Use our mapping to supply the clean name
+        var rName = maps.rule[ev.rule.id] ? maps.rule[ev.rule.id].name : (activeRuleMap[ev.rule.id] || 'Unknown Rule');
         var dt = new Date(ev.activeFrom).toLocaleString();
         var addrText = ev._address || 'Location unavailable';
 
@@ -326,7 +328,7 @@
 
       table.appendChild(tbody);
       
-      container.innerHTML = ''; // Clear loading text
+      container.innerHTML = ''; 
       container.appendChild(btnContainer);
       container.appendChild(mapContainer);
       container.appendChild(table);
@@ -398,7 +400,7 @@
       
       if (!startStr || !endStr) return alert('Please select both start and end dates.');
       
-      setLoading(true, 'Fetching exceptions for selected timeframe...');
+      setLoading(true, 'Fetching targeted exceptions for timeframe...');
       document.getElementById('header-entity').textContent = groupingType === 'asset' ? 'Asset' : 'Driver (Email)';
       document.getElementById('error-state').style.display = 'none';
 
@@ -415,8 +417,37 @@
         col(gSel);
       }
 
-      myApi.call('Get', { typeName: 'ExceptionEvent', search: { fromDate: fromDate, toDate: toDate }, resultsLimit: 50000 }, function(events) {
-        debugLog('Loaded ' + events.length + ' exception events');
+      // 💥 THE MAJOR FIX IS HERE 💥
+      // We only ask Geotab for the exact Rules we care about!
+      var ruleIdsToFetch = Object.keys(activeRuleMap);
+      
+      // If the user picked just ONE rule from the dropdown, only fetch that one!
+      if (rSel !== 'all') {
+          ruleIdsToFetch = ruleIdsToFetch.filter(function(id) {
+              return activeRuleMap[id] === rSel;
+          });
+      }
+
+      // Build a multi-call to get ExceptionEvents for ONLY those specific rule IDs
+      var calls = ruleIdsToFetch.map(function(id) {
+          return ['Get', {
+              typeName: 'ExceptionEvent',
+              search: {
+                  fromDate: fromDate,
+                  toDate: toDate,
+                  ruleSearch: { id: id } // Server-side filtering!
+              },
+              resultsLimit: 50000 // Now it won't hit the cap because we stripped out the junk rules
+          }];
+      });
+
+      myApi.multiCall(calls, function(results) {
+        var events = [];
+        results.forEach(function(res) {
+            if (res && res.length > 0) events = events.concat(res);
+        });
+
+        debugLog('Loaded ' + events.length + ' targeted exception events');
         debugSample('events', events);
 
         var filteredEvents = [];
@@ -430,9 +461,9 @@
           
           if (dSel !== 'all' && (ev.driver ? ev.driver.id : 'UnknownDriverId') !== dSel) return;
 
-          var ruleName = targetRuleIds[ev.rule.id];
-          if (!ruleName) return;
-          if (rSel !== 'all' && ruleName !== rSel) return;
+          // Our rule mapping is now safely applied
+          var ruleName = activeRuleMap[ev.rule.id];
+          if (!ruleName) return; 
 
           filteredEvents.push(ev);
         });
@@ -515,7 +546,7 @@
           tr.onclick = function() {
             var isHidden = detailTr.style.display === 'none';
             detailTr.style.display = isHidden ? 'table-row' : 'none';
-            tdIcon.textContent = isHidden ? '?' : '?';
+            tdIcon.textContent = isHidden ? '▼' : '▶';
             if (isHidden) renderDetails('details-' + index, stat.events, stat.name, index);
           };
         });
@@ -546,11 +577,11 @@
       errEl.textContent = msg;
     }
 
-    geotab.addin["exceptions-summary-v0-1"] = function() {
+    geotab.addin["exceptions-summary-v0-5"] = function() {
       return {
         initialize: function(api, state, callback) {
           myApi = api;
-          debugLog('Initializing v0.3 (ID Router)...');
+          debugLog('Initializing v0.5 (Targeted API Calls)...');
           
           var now = new Date();
           var yesterday = new Date(now.getTime() - (24 * 60 * 60 * 1000));
@@ -560,38 +591,35 @@
           document.getElementById('btn-refresh').addEventListener('click', fetchExceptions);
           document.getElementById('group-filter').addEventListener('change', updateDriverDropdown);
 
-          // 1. Get current database
           api.getSession(function(session) {
             var currentDb = (session.database || "").toLowerCase();
-            debugLog('Running in database: ' + currentDb);
+            debugLog('Running in normalized database: ' + currentDb);
 
-            // 2. Map databases using exact Rule IDs
             var databaseRuleIds = {
               "cummins_inc": {
                 "RuleHarshBrakingId": "Harsh Braking",
                 "aBbSlkgNqCk2FX7IyHuZUEA": "Seatbelt",
-                "aYK9YOfCwLEObDO7UMtn8vA": "Speeding >10% >20secs"
+                "aYK9YOfCwLEObDO7UMtn8vA": "Speeding >10kmhr >20secs"
               },
               "cummins_emea": {
                 "RuleHarshBrakingId": "Harsh Braking",
                 "RuleSeatbeltId": "Seatbelt",
-                "aj0Wu1i51t0KhffdIkh7ESA": "Speeding >10km/hr >20secs"
+                "aj0Wu1i51t0KhffdIkh7ESA": "Speeding >10% >20secs"
               },
               "cummins_apac_fleet": {
                 "RuleHarshBrakingId": "Harsh Braking",
-                "aEE5SwjuQRE-xhoO1VuALow": "Seatbelt",
-                "a7T_jl1JYjkqM0UD6-q6x6Q": "Speeding >10% >20secs"
-              },
+                "RuleSeatbeltId": "Seatbelt",
+                "RulePostedSpeedingId": "Speeding >10% >20secs"
+              }
             };
 
-            // Fallback for testing in a database not listed above (uses Geotab defaults)
-            var activeMap = databaseRuleIds[currentDb] || {
-              "RuleHarshBrakingId": "Harsh Braking",
-              "RuleSeatbeltId": "Seatbelt Exception",
-              "RulePostedSpeedingId": "Speeding (Excluding Estimated Data) >10% >20secs"
+            // Save this to our global variable so fetchExceptions can use it
+            activeRuleMap = databaseRuleIds[currentDb] || {
+              "RuleHarshBrakingId": "Harsh Braking (Default)",
+              "RuleSeatbeltId": "Seatbelt (Default)",
+              "RulePostedSpeedingId": "Speeding (Default)"
             };
 
-            // 3. Load the system data
             api.multiCall([
               ['Get', { typeName: 'Rule' }],
               ['Get', { typeName: 'Device' }],
@@ -599,16 +627,7 @@
               ['Get', { typeName: 'Group' }]
             ], function(results) {
               
-              // 4. Translate the IDs into your standard dropdown buckets
-              results[0].forEach(function(r) {
-                maps.rule[r.id] = r;
-                
-                // Check if this rule's ID is one of the 3 we care about for this database
-                if (activeMap[r.id]) {
-                    targetRuleIds[r.id] = activeMap[r.id];
-                }
-              });
-              
+              results[0].forEach(function(r) { maps.rule[r.id] = r; });
               results[1].forEach(function(d) { maps.device[d.id] = d; });
               results[2].forEach(function(u) { maps.user[u.id] = u; });
               
@@ -623,8 +642,7 @@
               });
               
               updateDriverDropdown();
-              debugLog('System data pre-loaded for DB: ' + currentDb);
-              
+              debugLog('System data pre-loaded.');
               document.getElementById('loading-state').style.display = 'none';
               callback();
             }, function(err) {
@@ -633,7 +651,7 @@
               callback();
             });
 
-          }); // End of getSession
+          }); 
         },
         focus: function(api, state) {},
         blur: function(api, state) {}
@@ -641,10 +659,4 @@
     };
   </script>
 </body>
-
 </html>
-
-
-
-
-
