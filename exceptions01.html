@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Scorecard Analysis(Beta)</title>
+  <title>Exceptions Summary</title>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
     var link = document.createElement('link');
@@ -14,7 +14,7 @@
 <body style="margin:0; font-family:Arial,sans-serif; background-color:#f5f6f8; color:#333;">
   
   <div id="app-container" style="padding:20px;">
-    <h2 style="margin-top:0; border-bottom:1px solid #ccc; padding-bottom:10px;">Scorecard Analysis(Beta)</h2>
+    <h2 style="margin-top:0; border-bottom:1px solid #ccc; padding-bottom:10px;">Exceptions Summary</h2>
     
     <div style="background:#fff; padding:15px; border:1px solid #e0e0e0; border-radius:4px; margin-bottom:20px; display:flex; align-items:center; gap:15px; flex-wrap:wrap;">
       <div>
@@ -40,10 +40,7 @@
       <div>
         <label style="font-size:12px; font-weight:bold; color:#666; display:block; margin-bottom:4px;">Target Rule</label>
         <select id="rule-filter" style="padding:6px; border:1px solid #ccc; border-radius:4px; max-width:200px;">
-          <option value="all">All 3 Safety Rules</option>
-          <option value="Harsh Braking">Harsh Braking</option>
-          <option value="Seatbelt Exception">Seatbelt Exception</option>
-          <option value="Speeding (Excluding Estimated Data) >10% >20secs">Speeding (>10% >20s)</option>
+          <option value="all">Loading rules...</option>
         </select>
       </div>
       <div>
@@ -61,14 +58,15 @@
     <div id="intro-state" style="padding:40px 20px; text-align:center; background:#fff; border:1px solid #e0e0e0; border-radius:4px; margin-bottom:20px;">
       <h3 style="margin-top:0; color:#1e3a8a; font-size:20px;">📍 Safety Exceptions Analyzer</h3>
       <p style="color:#555; max-width:650px; margin:0 auto 15px auto; line-height:1.6; font-size:14px;">
-        Welcome to the vehicle and driver safety dashboard. This tool specifically isolates and tracks your fleet's three scorecard safety rules: <b>Harsh Braking</b>, <b>Seatbelt</b>, and <b>Speeding</b>.
-      </p>
-      <p style="color:#555; max-width:650px; margin:0 auto; line-height:1.6; font-size:14px;">
-        Use the filters above to refine your timeframe, organization group, driver, or specific safety rule. Click <b>Load Data</b> to generate a vehicle-centric or driver-centric breakdown and analyze exactly where these events are happening on the map.
+        Welcome to the vehicle and driver safety dashboard. This tool specifically isolates and tracks your fleet's three most critical safety rules.
       </p>
     </div>
 
-    <div id="loading-state" style="display:none; padding:40px; text-align:center; font-size:16px; color:#666;">Loading...</div>
+    <div id="loading-state" style="display:none; padding:40px; text-align:center; font-size:16px; color:#666;">
+      <div style="display:inline-block; width:24px; height:24px; border:3px solid #ccc; border-top-color:#2563eb; border-radius:50%; animation:spin 1s linear infinite; margin-bottom:10px;"></div>
+      <br><span id="loading-text">Loading...</span>
+      <style>@keyframes spin { 100% { transform: rotate(360deg); } }</style>
+    </div>
     <div id="error-state" style="display:none; padding:20px; color:#e74c3c; background:#fadbd8; border-radius:4px; margin-bottom:20px;"></div>
     
     <div id="table-container" style="display:none; background:#fff; border:1px solid #e0e0e0; border-radius:4px; overflow:hidden;">
@@ -96,7 +94,7 @@
   <script>
     var _debugData = {};
     var maps = { rule: {}, device: {}, user: {}, group: {} };
-    var activeRuleMap = {}; // Global dictionary for current DB rules
+    var activeRuleMap = {}; 
     var myApi = null;
 
     function debugLog(msg) {
@@ -114,11 +112,11 @@
       t.select();
       document.execCommand('copy');
       document.body.removeChild(t);
-      alert('Debug data copied to clipboard! Paste it back to the AI chat for analysis.');
+      alert('Debug data copied to clipboard!');
     }
 
     function debugSample(key, arr) {
-      _debugData[key] = { total: arr.length, sample: arr.slice(0, 10) };
+      _debugData[key] = { total: arr.length, sample: arr.slice(0, 5) };
     }
 
     function formatDuration(ms) {
@@ -188,207 +186,6 @@
       return a;
     }
 
-    function triggerHotspotAnalysis(containerId, events, limit) {
-      var container = document.getElementById(containerId);
-      var eventCount = Math.min(events.length, limit);
-      container.innerHTML = '<div style="padding:20px;text-align:center;"><div style="margin-bottom:8px;font-weight:bold;">Building Map...</div><div style="font-size:12px;color:#666;">Locating the top ' + eventCount + ' events.</div></div>';
-
-      var sample = events.slice(0, limit);
-      var calls = sample.map(function(ev) {
-        return ['Get', { typeName: 'LogRecord', search: { deviceSearch: { id: ev.device.id }, fromDate: ev.activeFrom, toDate: ev.activeTo }, resultsLimit: 1 }];
-      });
-
-      myApi.multiCall(calls, function(logRes) {
-        var coords = [], validLogs = [];
-        logRes.forEach(function(res, i) {
-          if (res && res[0]) {
-            var pt = { x: res[0].longitude, y: res[0].latitude };
-            coords.push(pt);
-            validLogs.push({ pt: pt, event: sample[i] });
-          }
-        });
-
-        if (coords.length === 0) {
-          container.innerHTML = '<div style="padding:15px; color:#e74c3c; text-align:center;">No GPS log records found for these exceptions.</div>';
-          return;
-        }
-
-        myApi.call('GetAddresses', { coordinates: coords }, function(addrRes) {
-          var streetCounts = {};
-          addrRes.forEach(function(addr, k) {
-            var raw = (addr.street && addr.street.trim() !== '') ? addr.street : (addr.formattedAddress ? addr.formattedAddress.split(',')[0] : 'Unknown');
-            var clean = raw.replace(/^\s*\d+[a-zA-Z]?\s+/, '').trim() || 'Unknown Road';
-            streetCounts[clean] = (streetCounts[clean] || 0) + 1;
-            validLogs[k].streetName = clean;
-          });
-
-          var sorted = Object.keys(streetCounts).map(function(k) { return { name: k, count: streetCounts[k] }; }).sort(function(a,b) { return b.count - a.count; });
-
-          container.innerHTML = '<div style="display:flex;gap:10px;height:400px;padding-top:10px;"><div id="map-' + containerId + '" style="flex:2;border-radius:4px;border:1px solid #ccc;"></div><div style="flex:1;overflow-y:auto;background:#fff;border:1px solid #ccc;border-radius:4px;padding:0;"><table style="width:100%;font-size:12px;border-collapse:collapse;"><thead style="position:sticky;top:0;background:#eee;"><tr><th style="padding:8px;text-align:left;">Road</th><th style="padding:8px;text-align:center;">#</th></tr></thead><tbody id="street-rows-' + containerId + '"></tbody></table></div></div>';
-
-          var tbody = document.getElementById('street-rows-' + containerId);
-          var boundsByStreet = {};
-          
-          sorted.forEach(function(s) {
-            var tr = document.createElement('tr');
-            tr.style.cursor = 'pointer';
-            tr.style.borderBottom = '1px solid #f0f0f0';
-            tr.onmouseover = function() { this.style.background = '#f9fafb'; };
-            tr.onmouseout = function() { this.style.background = ''; };
-            tr.innerHTML = '<td style="padding:8px;color:#2563eb;text-decoration:underline;">' + s.name + '</td><td style="padding:8px;text-align:center;font-weight:bold;">' + s.count + '</td>';
-            tbody.appendChild(tr);
-            tr.onclick = function() { if(boundsByStreet[s.name]) map.fitBounds(boundsByStreet[s.name], {padding: [30,30], maxZoom: 16}); };
-          });
-
-          var map = L.map('map-' + containerId);
-          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-          var allB = L.latLngBounds();
-          
-          validLogs.forEach(function(v) {
-            var ll = [v.pt.y, v.pt.x];
-            var devName = maps.device[v.event.device.id] ? maps.device[v.event.device.id].name : 'Vehicle';
-            L.marker(ll).addTo(map).bindPopup('<b>'+devName+'</b><br>Road: '+v.streetName);
-            allB.extend(ll);
-            if(!boundsByStreet[v.streetName]) boundsByStreet[v.streetName] = L.latLngBounds();
-            boundsByStreet[v.streetName].extend(ll);
-          });
-          
-          if (validLogs.length > 0) map.fitBounds(allB, { padding: [20, 20] });
-        });
-      });
-    }
-
-    // Builds the physical details table with addresses included
-    function buildDetailsTable(container, allEvents, displayEvents, idx) {
-      var hId = 'hotspot-' + idx;
-      var btnContainer = document.createElement('div');
-      btnContainer.style.cssText = 'margin-bottom:15px; display:flex; gap:10px;';
-      
-      var btnAnalyze = document.createElement('button');
-      btnAnalyze.textContent = '📍 Analyze Locations (OSM)';
-      btnAnalyze.style.cssText = 'background:#10b981; color:#fff; border:none; padding:8px 16px; border-radius:4px; cursor:pointer; font-weight:bold;';
-      btnAnalyze.onclick = function(e) { e.stopPropagation(); triggerHotspotAnalysis(hId, allEvents, 200); };
-      btnContainer.appendChild(btnAnalyze);
-      
-      var mapContainer = document.createElement('div');
-      mapContainer.id = hId;
-      
-      var table = document.createElement('table');
-      table.style.cssText = 'width:100%; border-collapse:collapse; background:#fdfdfd; font-size:12px; border:1px solid #ddd;';
-      table.innerHTML = '<thead style="background:#eee; color:#555;"><tr><th style="padding:8px;text-align:left;">Date & Time</th><th style="padding:8px;text-align:left;">Rule</th><th style="padding:8px;text-align:left;">Asset</th><th style="padding:8px;text-align:left;">Driver</th><th style="padding:8px;text-align:left;">Location</th><th style="padding:8px;text-align:left;">Action</th></tr></thead>';
-      var tbody = document.createElement('tbody');
-      
-      displayEvents.forEach(function(ev) {
-        var tr = document.createElement('tr');
-        tr.style.borderBottom = '1px solid #eee';
-
-        var dev = maps.device[ev.device.id] || { name: 'Unknown Device' };
-        var usr = maps.user[ev.driver ? ev.driver.id : ''] || {};
-        
-        // Use our mapping to supply the clean name
-        var rName = maps.rule[ev.rule.id] ? maps.rule[ev.rule.id].name : (activeRuleMap[ev.rule.id] || 'Unknown Rule');
-        var dt = new Date(ev.activeFrom).toLocaleString();
-        var addrText = ev._address || 'Location unavailable';
-
-        var tdDate = document.createElement('td'); tdDate.style.padding = '8px'; tdDate.textContent = dt;
-        var tdRule = document.createElement('td'); tdRule.style.padding = '8px'; tdRule.textContent = rName;
-        
-        var tdAsset = document.createElement('td'); tdAsset.style.padding = '8px';
-        tdAsset.appendChild(createLink(dev.name, 'device,id:' + ev.device.id, false));
-
-        var tdDriver = document.createElement('td'); tdDriver.style.padding = '8px';
-        var driverName = usr.firstName ? (usr.firstName + ' ' + usr.lastName) : (usr.name || 'Unknown Driver');
-        var emailDisplay = (usr.name && usr.name !== 'UnknownDriverId' && usr.name !== driverName) ? ' (' + usr.name + ')' : '';
-        
-        var driverLink = createLink(driverName, 'user,id:' + (ev.driver ? ev.driver.id : ''), false);
-        tdDriver.appendChild(driverLink);
-        if (emailDisplay) {
-            var span = document.createElement('span');
-            span.style.color = '#666';
-            span.textContent = emailDisplay;
-            tdDriver.appendChild(span);
-        }
-
-        var tdLoc = document.createElement('td'); 
-        tdLoc.style.padding = '8px'; 
-        tdLoc.style.color = '#555';
-        tdLoc.textContent = addrText;
-
-        var tdAction = document.createElement('td'); tdAction.style.padding = '8px';
-        tdAction.appendChild(createLink('View Exact Event', 'exception,id:' + ev.id + ',runByDevice:!t,tab:overview', true));
-
-        tr.appendChild(tdDate);
-        tr.appendChild(tdRule);
-        tr.appendChild(tdAsset);
-        tr.appendChild(tdDriver);
-        tr.appendChild(tdLoc);
-        tr.appendChild(tdAction);
-        tbody.appendChild(tr);
-      });
-
-      table.appendChild(tbody);
-      
-      container.innerHTML = ''; 
-      container.appendChild(btnContainer);
-      container.appendChild(mapContainer);
-      container.appendChild(table);
-      
-      if (allEvents.length > 100) {
-        var capMsg = document.createElement('div');
-        capMsg.style.cssText = 'padding:10px; text-align:center; color:#e67e22; font-style:italic; font-size:12px;';
-        capMsg.textContent = 'Showing first 100 events below to prevent browser lag.';
-        container.appendChild(capMsg);
-      }
-    }
-
-    // Fetches Addresses dynamically before rendering
-    function renderDetails(id, events, entityName, idx) {
-      var c = document.getElementById(id);
-      if (c.hasAttribute('data-loaded')) return;
-      c.setAttribute('data-loaded', 'true');
-      
-      c.innerHTML = '<div style="padding:20px; text-align:center; color:#666;">Loading location data for events...</div>';
-
-      var displayEvents = events.slice(0, 100);
-      var calls = displayEvents.map(function(ev) {
-        return ['Get', { typeName: 'LogRecord', search: { deviceSearch: { id: ev.device.id }, fromDate: ev.activeFrom, toDate: ev.activeTo }, resultsLimit: 1 }];
-      });
-
-      myApi.multiCall(calls, function(logRes) {
-        var coords = [];
-        var coordMap = {};
-        logRes.forEach(function(res, i) {
-          if (res && res[0]) {
-            coords.push({ x: res[0].longitude, y: res[0].latitude });
-            coordMap[i] = coords.length - 1;
-          }
-        });
-
-        if (coords.length > 0) {
-          myApi.call('GetAddresses', { coordinates: coords }, function(addrRes) {
-            displayEvents.forEach(function(ev, i) {
-               var cIdx = coordMap[i];
-               if (cIdx !== undefined && addrRes[cIdx]) {
-                   ev._address = addrRes[cIdx].formattedAddress || 'Unknown Location';
-               } else {
-                   ev._address = 'Location not found';
-               }
-            });
-            buildDetailsTable(c, events, displayEvents, idx);
-          }, function(err) {
-            displayEvents.forEach(function(ev) { ev._address = 'Address lookup failed'; });
-            buildDetailsTable(c, events, displayEvents, idx);
-          });
-        } else {
-           displayEvents.forEach(function(ev) { ev._address = 'No GPS data'; });
-           buildDetailsTable(c, events, displayEvents, idx);
-        }
-      }, function(err) {
-         displayEvents.forEach(function(ev) { ev._address = 'GPS lookup failed'; });
-         buildDetailsTable(c, events, displayEvents, idx);
-      });
-    }
-
     function fetchExceptions() {
       if (!myApi) return;
       var startStr = document.getElementById('start-date').value;
@@ -400,7 +197,7 @@
       
       if (!startStr || !endStr) return alert('Please select both start and end dates.');
       
-      setLoading(true, 'Fetching targeted exceptions for timeframe...');
+      setLoading(true, 'Fetching targeted exceptions... (This may take a few seconds)');
       document.getElementById('header-entity').textContent = groupingType === 'asset' ? 'Asset' : 'Driver (Email)';
       document.getElementById('error-state').style.display = 'none';
 
@@ -417,153 +214,139 @@
         col(gSel);
       }
 
-      // 💥 THE MAJOR FIX IS HERE 💥
-      // We only ask Geotab for the exact Rules we care about!
       var ruleIdsToFetch = Object.keys(activeRuleMap);
-      
-      // If the user picked just ONE rule from the dropdown, only fetch that one!
       if (rSel !== 'all') {
-          ruleIdsToFetch = ruleIdsToFetch.filter(function(id) {
-              return activeRuleMap[id] === rSel;
-          });
+          ruleIdsToFetch = ruleIdsToFetch.filter(function(id) { return activeRuleMap[id] === rSel; });
       }
 
-      // Build a multi-call to get ExceptionEvents for ONLY those specific rule IDs
       var calls = ruleIdsToFetch.map(function(id) {
+          var searchObj = { fromDate: fromDate, toDate: toDate, ruleSearch: { id: id } };
+          
+          // SPEED BOOST 1: Filter by specific driver
+          if (dSel !== 'all') {
+              searchObj.userSearch = { id: dSel };
+              debugLog('API Filter -> Specific Driver: ' + dSel);
+          } 
+          // SPEED BOOST 2: Filter by specific group (Nested Search!)
+          else if (gSel !== 'all') {
+              if (groupingType === 'asset') {
+                  searchObj.deviceSearch = { groups: [{ id: gSel }] };
+                  debugLog('API Filter -> Device Group: ' + gSel);
+              } else {
+                  searchObj.userSearch = { groups: [{ id: gSel }] };
+                  debugLog('API Filter -> User Group: ' + gSel);
+              }
+          }
+
           return ['Get', {
               typeName: 'ExceptionEvent',
-              search: {
-                  fromDate: fromDate,
-                  toDate: toDate,
-                  ruleSearch: { id: id } // Server-side filtering!
-              },
-              resultsLimit: 50000 // Now it won't hit the cap because we stripped out the junk rules
+              search: searchObj,
+              resultsLimit: 5000 
           }];
       });
 
-      myApi.multiCall(calls, function(results) {
-        var events = [];
-        results.forEach(function(res) {
-            if (res && res.length > 0) events = events.concat(res);
-        });
+      setTimeout(function() {
+          myApi.multiCall(calls, function(results) {
+            var events = [];
+            results.forEach(function(res) {
+                if (res && res.length > 0) events = events.concat(res);
+            });
 
-        debugLog('Loaded ' + events.length + ' targeted exception events');
-        debugSample('events', events);
+            debugLog('Successfully downloaded ' + events.length + ' events.');
+            debugSample('events', events);
 
-        var filteredEvents = [];
-        events.forEach(function(ev) {
-          if (gSel !== 'all') {
-            var usr = maps.user[ev.driver ? ev.driver.id : ''] || {};
-            var dev = maps.device[ev.device ? ev.device.id : ''] || {};
-            var rG = (usr.companyGroups && usr.companyGroups[0]) ? usr.companyGroups[0].id : ((dev.groups && dev.groups[0]) ? dev.groups[0].id : null);
-            if (!rG || !validGroups[rG]) return;
-          }
-          
-          if (dSel !== 'all' && (ev.driver ? ev.driver.id : 'UnknownDriverId') !== dSel) return;
+            var filteredEvents = [];
+            events.forEach(function(ev) {
+              // We still do a final local check for nested group hierarchy accuracy
+              if (gSel !== 'all') {
+                var usr = maps.user[ev.driver ? ev.driver.id : ''] || {};
+                var dev = maps.device[ev.device ? ev.device.id : ''] || {};
+                var rG = (usr.companyGroups && usr.companyGroups[0]) ? usr.companyGroups[0].id : ((dev.groups && dev.groups[0]) ? dev.groups[0].id : null);
+                if (!rG || !validGroups[rG]) return;
+              }
+              if (dSel !== 'all' && (ev.driver ? ev.driver.id : 'UnknownDriverId') !== dSel) return;
 
-          // Our rule mapping is now safely applied
-          var ruleName = activeRuleMap[ev.rule.id];
-          if (!ruleName) return; 
+              var ruleName = activeRuleMap[ev.rule.id];
+              if (!ruleName) return; 
 
-          filteredEvents.push(ev);
-        });
+              filteredEvents.push(ev);
+            });
 
-        if (filteredEvents.length === 0) {
-          setLoading(false);
-          showError('No exceptions found for this timeframe matching your filters.');
-          document.getElementById('table-container').style.display = 'none';
-          return;
-        }
-
-        var statsByEntity = {};
-        filteredEvents.forEach(function(ev) {
-          var entityId = groupingType === 'asset' ? ev.device.id : (ev.driver ? ev.driver.id : 'UnknownDriverId');
-          
-          if (!statsByEntity[entityId]) {
-            var name = 'Unknown';
-            if (groupingType === 'asset') {
-              var dev = maps.device[entityId] || { name: 'Unknown Device' };
-              name = dev.name;
-            } else {
-              var usr = maps.user[entityId] || {};
-              name = usr.firstName ? (usr.firstName + ' ' + usr.lastName) : (usr.name || 'Unknown Driver');
-              if (usr.name && usr.name !== 'UnknownDriverId') name += ' (' + usr.name + ')';
+            if (filteredEvents.length === 0) {
+              setLoading(false);
+              showError('No exceptions found for this timeframe matching your filters.');
+              document.getElementById('table-container').style.display = 'none';
+              return;
             }
+
+            var statsByEntity = {};
+            filteredEvents.forEach(function(ev) {
+              var entityId = groupingType === 'asset' ? ev.device.id : (ev.driver ? ev.driver.id : 'UnknownDriverId');
+              
+              if (!statsByEntity[entityId]) {
+                var name = 'Unknown';
+                if (groupingType === 'asset') {
+                  var dev = maps.device[entityId] || { name: 'Unknown Device' };
+                  name = dev.name;
+                } else {
+                  var usr = maps.user[entityId] || {};
+                  name = usr.firstName ? (usr.firstName + ' ' + usr.lastName) : (usr.name || 'Unknown Driver');
+                  if (usr.name && usr.name !== 'UnknownDriverId') name += ' (' + usr.name + ')';
+                }
+                statsByEntity[entityId] = { id: entityId, name: name, count: 0, durationMs: 0, distance: 0, events: [] };
+              }
+              
+              statsByEntity[entityId].count++;
+              statsByEntity[entityId].events.push(ev);
+              statsByEntity[entityId].distance += (ev.distance || 0);
+              var st = new Date(ev.activeFrom).getTime(), en = new Date(ev.activeTo).getTime();
+              if (!isNaN(st) && !isNaN(en)) statsByEntity[entityId].durationMs += (en - st);
+            });
+
+            var summaryArray = Object.keys(statsByEntity).map(function(k) { return statsByEntity[k]; });
+            summaryArray.sort(function(a, b) { return b.count - a.count; });
+
+            setLoading(false);
+            var tbody = document.getElementById('exceptions-body');
+            tbody.innerHTML = '';
+            document.getElementById('table-container').style.display = 'block';
             
-            statsByEntity[entityId] = { id: entityId, name: name, count: 0, durationMs: 0, distance: 0, events: [] };
-          }
-          
-          statsByEntity[entityId].count++;
-          statsByEntity[entityId].events.push(ev);
-          statsByEntity[entityId].distance += (ev.distance || 0);
-          var st = new Date(ev.activeFrom).getTime(), en = new Date(ev.activeTo).getTime();
-          if (!isNaN(st) && !isNaN(en)) statsByEntity[entityId].durationMs += (en - st);
-        });
+            summaryArray.forEach(function(stat, index) {
+              var tr = document.createElement('tr');
+              tr.style.cssText = 'border-bottom:1px solid #eee; background:#fff;';
+              
+              var tdIcon = document.createElement('td');
+              tdIcon.style.cssText = 'padding:12px; color:#888; text-align:center;';
+              tdIcon.textContent = '-';
+              
+              var tdName = document.createElement('td'); tdName.style.padding = '12px 15px'; tdName.textContent = stat.name;
+              var tdCount = document.createElement('td'); tdCount.style.padding = '12px 15px'; tdCount.textContent = stat.count;
+              var tdDuration = document.createElement('td'); tdDuration.style.padding = '12px 15px'; tdDuration.textContent = formatDuration(stat.durationMs);
+              var tdDistance = document.createElement('td'); tdDistance.style.padding = '12px 15px'; tdDistance.textContent = stat.distance.toFixed(2);
 
-        var summaryArray = Object.keys(statsByEntity).map(function(k) { return statsByEntity[k]; });
-        summaryArray.sort(function(a, b) { return b.count - a.count; });
+              tr.appendChild(tdIcon);
+              tr.appendChild(tdName);
+              tr.appendChild(tdCount);
+              tr.appendChild(tdDuration);
+              tr.appendChild(tdDistance);
+              tbody.appendChild(tr);
+            });
 
-        setLoading(false);
-        var tbody = document.getElementById('exceptions-body');
-        tbody.innerHTML = '';
-        document.getElementById('table-container').style.display = 'block';
-        
-        summaryArray.forEach(function(stat, index) {
-          var tr = document.createElement('tr');
-          tr.style.cssText = 'border-bottom:1px solid #eee; cursor:pointer; background:#fff;';
-          tr.onmouseover = function() { tr.style.background = '#f9fafb'; };
-          tr.onmouseout = function() { tr.style.background = '#fff'; };
-          
-          var tdIcon = document.createElement('td');
-          tdIcon.style.cssText = 'padding:12px; color:#888; text-align:center; user-select:none;';
-          tdIcon.textContent = '▶';
-          
-          var tdName = document.createElement('td'); tdName.style.padding = '12px 15px'; tdName.textContent = stat.name;
-          var tdCount = document.createElement('td'); tdCount.style.padding = '12px 15px'; tdCount.textContent = stat.count;
-          var tdDuration = document.createElement('td'); tdDuration.style.padding = '12px 15px'; tdDuration.textContent = formatDuration(stat.durationMs);
-          var tdDistance = document.createElement('td'); tdDistance.style.padding = '12px 15px'; tdDistance.textContent = stat.distance.toFixed(2);
-
-          tr.appendChild(tdIcon);
-          tr.appendChild(tdName);
-          tr.appendChild(tdCount);
-          tr.appendChild(tdDuration);
-          tr.appendChild(tdDistance);
-          tbody.appendChild(tr);
-
-          var detailTr = document.createElement('tr');
-          detailTr.style.display = 'none';
-          detailTr.style.background = '#fdfdfd';
-          var detailTd = document.createElement('td');
-          detailTd.colSpan = 5;
-          detailTd.style.padding = '15px 30px';
-          
-          var detailContainer = document.createElement('div');
-          detailContainer.id = 'details-' + index;
-          detailTd.appendChild(detailContainer);
-          detailTr.appendChild(detailTd);
-          tbody.appendChild(detailTr);
-
-          tr.onclick = function() {
-            var isHidden = detailTr.style.display === 'none';
-            detailTr.style.display = isHidden ? 'table-row' : 'none';
-            tdIcon.textContent = isHidden ? '▼' : '▶';
-            if (isHidden) renderDetails('details-' + index, stat.events, stat.name, index);
-          };
-        });
-
-      }, function(err) {
-        debugLog('ERROR: ' + String(err));
-        setLoading(false);
-        showError('Failed to load exception events.');
-      });
+          }, function(err) {
+            debugLog('ERROR: ' + String(err));
+            setLoading(false);
+            showError('Failed to load exception events.');
+          });
+      }, 100);
     }
 
     function setLoading(isLoad, msg) {
       var el = document.getElementById('loading-state');
+      var textEl = document.getElementById('loading-text');
       var intro = document.getElementById('intro-state');
       if (isLoad) {
         el.style.display = 'block';
-        el.textContent = msg || 'Loading...';
+        textEl.textContent = msg || 'Loading...';
         document.getElementById('table-container').style.display = 'none';
         if (intro) intro.style.display = 'none';
       } else {
@@ -577,11 +360,11 @@
       errEl.textContent = msg;
     }
 
-    geotab.addin["exceptions-summary-v0-5"] = function() {
+    geotab.addin["exceptions-summary"] = function() {
       return {
         initialize: function(api, state, callback) {
           myApi = api;
-          debugLog('Initializing v0.5 (Targeted API Calls)...');
+          debugLog('Initializing v0.8 (Nested Group Searching)...');
           
           var now = new Date();
           var yesterday = new Date(now.getTime() - (24 * 60 * 60 * 1000));
@@ -592,33 +375,42 @@
           document.getElementById('group-filter').addEventListener('change', updateDriverDropdown);
 
           api.getSession(function(session) {
-            var currentDb = (session.database || "").toLowerCase();
+            var dbName = session.database || (session.credentials && session.credentials.database) || "unknown";
+            var currentDb = dbName.toLowerCase();
             debugLog('Running in normalized database: ' + currentDb);
 
             var databaseRuleIds = {
               "cummins_inc": {
                 "RuleHarshBrakingId": "Harsh Braking",
-                "aBbSlkgNqCk2FX7IyHuZUEA": "Seatbelt",
-                "aYK9YOfCwLEObDO7UMtn8vA": "Speeding >10kmhr >20secs"
+                "aBbSlkgNqCk2FX7IyHuZUEA": "Seatbelt Exception",
+                "aYK9YOfCwLEObDO7UMtn8vA": "Speeding >10kmhr >20s"
               },
               "cummins_emea": {
                 "RuleHarshBrakingId": "Harsh Braking",
-                "RuleSeatbeltId": "Seatbelt",
-                "aj0Wu1i51t0KhffdIkh7ESA": "Speeding >10% >20secs"
+                "RuleSeatbeltId": "Seatbelt Exception",
+                "aj0Wu1i51t0KhffdIkh7ESA": "Speeding (>10% >20s)"
               },
               "cummins_apac_fleet": {
                 "RuleHarshBrakingId": "Harsh Braking",
-                "RuleSeatbeltId": "Seatbelt",
-                "RulePostedSpeedingId": "Speeding >10% >20secs"
+                "RuleSeatbeltId": "Seatbelt Exception",
+                "RulePostedSpeedingId": "Speeding (>10% >20s)"
               }
             };
 
-            // Save this to our global variable so fetchExceptions can use it
             activeRuleMap = databaseRuleIds[currentDb] || {
-              "RuleHarshBrakingId": "Harsh Braking (Default)",
-              "RuleSeatbeltId": "Seatbelt (Default)",
-              "RulePostedSpeedingId": "Speeding (Default)"
+              "RuleHarshBrakingId": "Harsh Braking",
+              "RuleSeatbeltId": "Seatbelt Exception",
+              "RulePostedSpeedingId": "Speeding (>10% >20s)"
             };
+
+            var ruleSelect = document.getElementById('rule-filter');
+            ruleSelect.innerHTML = '<option value="all">All Safety Rules</option>';
+            Object.keys(activeRuleMap).forEach(function(ruleId) {
+                var opt = document.createElement('option');
+                opt.value = activeRuleMap[ruleId];
+                opt.textContent = activeRuleMap[ruleId];
+                ruleSelect.appendChild(opt);
+            });
 
             api.multiCall([
               ['Get', { typeName: 'Rule' }],
@@ -626,7 +418,6 @@
               ['Get', { typeName: 'User' }],
               ['Get', { typeName: 'Group' }]
             ], function(results) {
-              
               results[0].forEach(function(r) { maps.rule[r.id] = r; });
               results[1].forEach(function(d) { maps.device[d.id] = d; });
               results[2].forEach(function(u) { maps.user[u.id] = u; });
@@ -642,15 +433,13 @@
               });
               
               updateDriverDropdown();
-              debugLog('System data pre-loaded.');
               document.getElementById('loading-state').style.display = 'none';
               callback();
             }, function(err) {
               debugLog('ERROR loading references: ' + String(err));
-              showError('Failed to load system references (Devices/Rules/etc).');
+              showError('Failed to load system references.');
               callback();
             });
-
           }); 
         },
         focus: function(api, state) {},
@@ -660,4 +449,3 @@
   </script>
 </body>
 </html>
-
