@@ -1,28 +1,51 @@
 <!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"></head>
-<body>
-    <div id="loading-screen" style="padding:50px; text-align:center; font-family:sans-serif; color:#666;">
-        Checking for updates and syncing fleet data...
-    </div>
+<body style="margin:0; padding:20px; font-family:sans-serif; background:#f8fafc;">
     
+    <div id="setup-ui">
+        <h1>Fleet Health Dashboard</h1>
+        <div style="margin-bottom:20px;">
+            <select id="group-select" onchange="window.fetchData()"><option>Loading...</option></select>
+            <select id="status-select" onchange="window.fetchData()">
+                <option value="-1">All Active</option>
+                <option value="15">15+ Days</option>
+            </select>
+        </div>
+        <div style="display:flex; gap:20px;">
+            <div id="devices-container" style="flex:1; background:white; padding:15px; border-radius:8px;"></div>
+            <div id="users-container" style="flex:1; background:white; padding:15px; border-radius:8px;"></div>
+        </div>
+    </div>
+
+    <div id="loading-overlay" style="position:fixed; top:0; left:0; width:100%; height:100%; background:white; display:flex; justify-content:center; align-items:center; z-index:999;">
+        <div style="text-align:center;">
+            <div style="border:4px solid #f3f3f3; border-top:4px solid #3498db; border-radius:50%; width:40px; height:40px; animation:spin 2s linear infinite; margin:0 auto 10px;"></div>
+            <p>Syncing Latest GitHub Version...</p>
+        </div>
+    </div>
+
+    <style>@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }</style>
+
     <script>
     geotab.addin['fleet-health-auto'] = function() {
         return {
             initialize: function(api, state, callback) {
-                // 1. Generate a unique timestamp to bypass ALL caching
-                var cacheBuster = new Date().getTime();
-                var scriptUrl = 'https://YOUR_USERNAME.github.io/YOUR_REPO/fleet-health-logic.js?t=' + cacheBuster;
-                
-                // 2. Dynamically load the latest script from GitHub
+                var scriptUrl = 'https://imnolanh.github.io/my-geotab-tools/fleet-health-logic.js?t=' + new Date().getTime();
                 var script = document.createElement('script');
                 script.src = scriptUrl;
                 script.onload = function() {
-                    // 3. Hide loading screen and run the logic
-                    document.getElementById('loading-screen').style.display = 'none';
+                    document.getElementById('loading-overlay').style.display = 'none';
                     if (window.initFleetHealth) {
                         window.initFleetHealth(api, state, callback);
+                    } else {
+                        alert('Logic file loaded but init function not found.');
+                        callback();
                     }
+                };
+                script.onerror = function() {
+                    alert('Could not load logic file from GitHub.');
+                    callback();
                 };
                 document.head.appendChild(script);
             }
