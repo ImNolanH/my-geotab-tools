@@ -550,7 +550,7 @@
       return {
         initialize: function(api, state, callback) {
           myApi = api;
-          debugLog('Initializing v0.1...');
+          debugLog('Initializing v0.3 (ID Router)...');
           
           var now = new Date();
           var yesterday = new Date(now.getTime() - (24 * 60 * 60 * 1000));
@@ -560,48 +560,82 @@
           document.getElementById('btn-refresh').addEventListener('click', fetchExceptions);
           document.getElementById('group-filter').addEventListener('change', updateDriverDropdown);
 
-          var namesToFind = [
-            "Harsh Braking",
-            "Seatbelt Exception",
-            "Speeding (Excluding Estimated Data) >10% >20secs"
-          ];
+          // 1. Get current database
+          api.getSession(function(session) {
+            var currentDb = session.database;
+            debugLog('Running in database: ' + currentDb);
 
-          api.multiCall([
-            ['Get', { typeName: 'Rule' }],
-            ['Get', { typeName: 'Device' }],
-            ['Get', { typeName: 'User' }],
-            ['Get', { typeName: 'Group' }]
-          ], function(results) {
-            results[0].forEach(function(r) {
-              maps.rule[r.id] = r;
-              if (namesToFind.indexOf(r.name) !== -1) {
-                  targetRuleIds[r.id] = r.name;
-              }
+            // 2. Map your databases using exact Rule IDs
+            var databaseRuleIds = {
+              "cummins_inc": {
+                "RuleHarshBrakingId": "Harsh Braking",
+                "aBbSlkgNqCk2FX7IyHuZUEA": "Seatbelt",
+                "aYK9YOfCwLEObDO7UMtn8vA": "Speeding >10% >20secs"
+              },
+              "cummins_emea": {
+                "RuleHarshBrakingId": "Harsh Braking",
+                "RuleSeatbeltId": "Seatbelt",
+                "aj0Wu1i51t0KhffdIkh7ESA": "Speeding >10% >20secs"
+              },
+              "cummins_apac_fleet": {
+                // I've slotted in the standard Geotab IDs here for now. 
+                // If APAC uses a custom speeding rule, just swap out "RulePostedSpeedingId" with the alphanumeric ID!
+                "RuleHarshBrakingId": "Harsh Braking",
+                "RuleSeatbeltId": "Seatbelt",
+                "RulePostedSpeedingId": "Speeding >10% >20secs"
+              },
+            };
+
+            // Fallback for testing in a database not listed above (uses Geotab defaults)
+            var activeMap = databaseRuleIds[currentDb] || {
+              "RuleHarshBrakingId": "Harsh Braking",
+              "RuleSeatbeltId": "Seatbelt Exception",
+              "RulePostedSpeedingId": "Speeding (Excluding Estimated Data) >10% >20secs"
+            };
+
+            // 3. Load the system data
+            api.multiCall([
+              ['Get', { typeName: 'Rule' }],
+              ['Get', { typeName: 'Device' }],
+              ['Get', { typeName: 'User' }],
+              ['Get', { typeName: 'Group' }]
+            ], function(results) {
+              
+              // 4. Translate the IDs into your standard dropdown buckets
+              results[0].forEach(function(r) {
+                maps.rule[r.id] = r;
+                
+                // Check if this rule's ID is one of the 3 we care about for this database
+                if (activeMap[r.id]) {
+                    targetRuleIds[r.id] = activeMap[r.id];
+                }
+              });
+              
+              results[1].forEach(function(d) { maps.device[d.id] = d; });
+              results[2].forEach(function(u) { maps.user[u.id] = u; });
+              
+              var groupSelect = document.getElementById('group-filter');
+              var sortedGroups = results[3].slice().sort(function(a, b) { return a.name.localeCompare(b.name); });
+              sortedGroups.forEach(function(g) {
+                maps.group[g.id] = g;
+                var opt = document.createElement('option');
+                opt.value = g.id;
+                opt.textContent = g.name;
+                groupSelect.appendChild(opt);
+              });
+              
+              updateDriverDropdown();
+              debugLog('System data pre-loaded for DB: ' + currentDb);
+              
+              document.getElementById('loading-state').style.display = 'none';
+              callback();
+            }, function(err) {
+              debugLog('ERROR loading references: ' + String(err));
+              showError('Failed to load system references (Devices/Rules/etc).');
+              callback();
             });
-            
-            results[1].forEach(function(d) { maps.device[d.id] = d; });
-            results[2].forEach(function(u) { maps.user[u.id] = u; });
-            
-            var groupSelect = document.getElementById('group-filter');
-            var sortedGroups = results[3].slice().sort(function(a, b) { return a.name.localeCompare(b.name); });
-            sortedGroups.forEach(function(g) {
-              maps.group[g.id] = g;
-              var opt = document.createElement('option');
-              opt.value = g.id;
-              opt.textContent = g.name;
-              groupSelect.appendChild(opt);
-            });
-            
-            updateDriverDropdown();
-            debugLog('System data pre-loaded.');
-            
-            document.getElementById('loading-state').style.display = 'none';
-            callback();
-          }, function(err) {
-            debugLog('ERROR loading references: ' + String(err));
-            showError('Failed to load system references (Devices/Rules/etc).');
-            callback();
-          });
+
+          }); // End of getSession
         },
         focus: function(api, state) {},
         blur: function(api, state) {}
@@ -611,5 +645,6 @@
 </body>
 
 </html>
+
 
 
