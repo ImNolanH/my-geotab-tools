@@ -562,10 +562,10 @@
 
           // 1. Get current database
           api.getSession(function(session) {
-            var currentDb = session.database;
+            var currentDb = (session.database || "").toLowerCase();
             debugLog('Running in database: ' + currentDb);
 
-            // 2. Map your databases using exact Rule IDs
+            // 2. Map databases using exact Rule IDs
             var databaseRuleIds = {
               "cummins_inc": {
                 "RuleHarshBrakingId": "Harsh Braking",
@@ -575,11 +575,9 @@
               "cummins_emea": {
                 "RuleHarshBrakingId": "Harsh Braking",
                 "RuleSeatbeltId": "Seatbelt",
-                "aj0Wu1i51t0KhffdIkh7ESA": "Speeding >10% >20secs"
+                "aj0Wu1i51t0KhffdIkh7ESA": "Speeding >10km/hr >20secs"
               },
               "cummins_apac_fleet": {
-                // I've slotted in the standard Geotab IDs here for now. 
-                // If APAC uses a custom speeding rule, just swap out "RulePostedSpeedingId" with the alphanumeric ID!
                 "RuleHarshBrakingId": "Harsh Braking",
                 "aEE5SwjuQRE-xhoO1VuALow": "Seatbelt",
                 "a7T_jl1JYjkqM0UD6-q6x6Q": "Speeding >10% >20secs"
@@ -645,6 +643,7 @@
 </body>
 
 </html>
+
 
 
 
