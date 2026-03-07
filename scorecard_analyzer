@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Scorecard Analyzer (beta)</title>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    var link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+    document.head.appendChild(link);
+  </script>
+</head>
+<body style="margin:0; font-family:Arial,sans-serif; background-color:#f5f6f8; color:#333;">
+  
+  <div id="app-container" style="padding:20px;">
+    <h2 style="margin-top:0; border-bottom:1px solid #ccc; padding-bottom:10px;">Scorecard Analyzer (beta)</h2>
+    
+    <div style="background:#fff; padding:15px; border:1px solid #e0e0e0; border-radius:4px; margin-bottom:20px; display:flex; align-items:center; gap:15px; flex-wrap:wrap;">
+      <div>
+        <label style="font-size:12px; font-weight:bold; color:#666; display:block; margin-bottom:4px;">Start Date</label>
+        <input type="date" id="start-date" style="padding:6px; border:1px solid #ccc; border-radius:4px;">
+      </div>
+      <div>
+        <label style="font-size:12px; font-weight:bold; color:#666; display:block; margin-bottom:4px;">End Date</label>
+        <input type="date" id="end-date" style="padding:6px; border:1px solid #ccc; border-radius:4px;">
+      </div>
+      <div>
+        <label style="font-size:12px; font-weight:bold; color:#666; display:block; margin-bottom:4px;">Group</label>
+        <select id="group-filter" style="padding:6px; border:1px solid #ccc; border-radius:4px; max-width:180px;">
+          <option value="all">All Groups</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:12px; font-weight:bold; color:#666; display:block; margin-bottom:4px;">Driver/Asset</label>
+        <select id="driver-filter" style="padding:6px; border:1px solid #ccc; border-radius:4px; max-width:180px;">
+          <option value="all">All Drivers/Assets</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:12px; font-weight:bold; color:#666; display:block; margin-bottom:4px;">Target Rule</label>
+        <select id="rule-filter" style="padding:6px; border:1px solid #ccc; border-radius:4px; max-width:200px;">
+          <option value="all">Loading rules...</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:12px; font-weight:bold; color:#666; display:block; margin-bottom:4px;">Summary Grouping</label>
+        <div style="display:flex; gap:10px; padding-top:4px;">
+            <label style="font-size:13px; display:flex; align-items:center;"><input type="radio" name="summary_group" value="asset" checked style="margin-right:5px;"> Asset</label>
+            <label style="font-size:13px; display:flex; align-items:center;"><input type="radio" name="summary_group" value="driver" style="margin-right:5px;"> Driver</label>
+        </div>
+      </div>
+      <div style="padding-top:18px;">
+        <button id="btn-refresh" style="background:#2563eb; color:#fff; border:none; padding:8px 16px; border-radius:4px; cursor:pointer; font-weight:bold;">Load Data</button>
+      </div>
+    </div>
+
+    <div id="intro-state" style="padding:40px 20px; text-align:center; background:#fff; border:1px solid #e0e0e0; border-radius:4px; margin-bottom:20px;">
+      <h3 style="margin-top:0; color:#1e3a8a; font-size:20px;">📍 Safety Exceptions Analyzer</h3>
+      <p style="color:#555; max-width:650px; margin:0 auto 15px auto; line-height:1.6; font-size:14px;">
+        Welcome to the vehicle and driver safety dashboard. This tool specifically isolates and tracks your fleet's three most critical safety rules.
+      </p>
+    </div>
+
+    <div id="loading-state" style="display:none; padding:40px; text-align:center; font-size:16px; color:#666;">
+      <div style="display:inline-block; width:24px; height:24px; border:3px solid #ccc; border-top-color:#2563eb; border-radius:50%; animation:spin 1s linear infinite; margin-bottom:10px;"></div>
+      <br><span id="loading-text">Loading...</span>
+      <style>@keyframes spin { 100% { transform: rotate(360deg); } }</style>
+    </div>
+    <div id="error-state" style="display:none; padding:20px; color:#e74c3c; background:#fadbd8; border-radius:4px; margin-bottom:20px;"></div>
+    
+    <div id="table-container" style="display:none; background:#fff; border:1px solid #e0e0e0; border-radius:4px; overflow:hidden;">
+      <table style="width:100%; border-collapse:collapse; text-align:left; font-size:14px;">
+        <thead style="background-color:#fafafa; border-bottom:2px solid #e0e0e0;">
+          <tr>
+            <th style="padding:12px; width:30px;"></th>
+            <th id="header-entity" style="padding:12px 15px; font-weight:bold; color:#555;">Asset (Email)</th>
+            <th style="padding:12px 15px; font-weight:bold; color:#555;">Count</th>
+            <th style="padding:12px 15px; font-weight:bold; color:#555;">Exceptions duration</th>
+            <th style="padding:12px 15px; font-weight:bold; color:#555;">Exceptions distance (km)</th>
+          </tr>
+        </thead>
+        <tbody id="exceptions-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div id="debug-toggle" style="position:fixed; bottom:0; left:0; right:0; text-align:center; z-index:9999;">
+    <button onclick="var d=document.getElementById('debug-log'); d.style.display=d.style.display==='none'?'block':'none';" style="background:#e74c3c; color:#fff; border:none; padding:4px 16px; cursor:pointer; font-size:12px; border-radius:4px 4px 0 0;">Toggle Debug Log</button>
+    <button onclick="copyDebugData()" style="background:#f39c12; color:#fff; border:none; padding:4px 16px; cursor:pointer; font-size:12px; border-radius:4px 4px 0 0; margin-left:4px;">Copy Debug Data</button>
+    <pre id="debug-log" style="display:none; background:#1e1e1e; color:#0f0; padding:10px; margin:0; max-height:200px; overflow-y:auto; text-align:left; font-size:11px;"></pre>
+  </div>
+
+  <script>
+    var _debugData = {};
+    var maps = { rule: {}, device: {}, user: {}, group: {} };
+    var activeRuleMap = {}; 
+    var myApi = null;
+
+    function debugLog(msg) {
+      var el = document.getElementById('debug-log');
+      if (el) {
+        el.textContent += '[' + new Date().toLocaleTimeString() + '] ' + msg + '\n';
+        el.scrollTop = el.scrollHeight;
+      }
+    }
+
+    function copyDebugData() {
+      var t = document.createElement('textarea');
+      t.value = JSON.stringify(_debugData, null, 2);
+      document.body.appendChild(t);
+      t.select();
+      document.execCommand('copy');
+      document.body.removeChild(t);
+      alert('Debug data copied to clipboard!');
+    }
+
+    function debugSample(key, arr) {
+      _debugData[key] = { total: arr.length, sample: arr.slice(0, 5) };
+    }
+
+    function formatDuration(ms) {
+      if (!ms || ms <= 0) return '0s';
+      var s = Math.floor(ms / 1000), m = Math.floor(s / 60), h = Math.floor(m / 60);
+      return (h > 0 ? h + 'h ' : '') + (m % 60 > 0 ? (m % 60) + 'm ' : '') + (s % 60 + 's');
+    }
+
+    function formatLocalDate(d) { 
+        function pad(n) { return n < 10 ? '0' + n : n; }
+        return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()); 
+    }
+
+    function updateDriverDropdown() {
+      var gId = document.getElementById('group-filter').value;
+      var driverSelect = document.getElementById('driver-filter');
+      driverSelect.innerHTML = '<option value="all">All Drivers</option>';
+      
+      var validGroups = {};
+      if (gId !== 'all') {
+        function collect(id) {
+          validGroups[id] = true;
+          var g = maps.group[id];
+          if (g && g.children) g.children.forEach(function(c) { collect(c.id); });
+        }
+        collect(gId);
+      }
+
+      var drivers = Object.keys(maps.user).map(function(k) { return maps.user[k]; })
+        .filter(function(u) {
+          if (!u.isDriver) return false;
+          if (gId === 'all') return true;
+          return u.companyGroups && u.companyGroups.some(function(ug) { return validGroups[ug.id]; });
+        });
+
+      drivers.sort(function(a, b) { 
+        var nameA = (a.firstName || a.name || '');
+        var nameB = (b.firstName || b.name || '');
+        return nameA.localeCompare(nameB); 
+      });
+
+      drivers.forEach(function(d) {
+        var opt = document.createElement('option');
+        opt.value = d.id;
+        opt.textContent = (d.firstName ? d.firstName + ' ' + d.lastName : d.name);
+        driverSelect.appendChild(opt);
+      });
+    }
+
+    function createLink(text, hash, isNewWindow) {
+      var a = document.createElement('a');
+      a.textContent = text;
+      a.href = '#';
+      a.style.cssText = 'color:#2563eb; cursor:pointer; text-decoration:none;';
+      if (isNewWindow) {
+        var baseUrl = window.parent.location.href.split('#')[0];
+        a.href = baseUrl + '#' + hash;
+        a.target = '_blank';
+      }
+      a.onclick = function(e) {
+        e.stopPropagation();
+        if (!isNewWindow) {
+          e.preventDefault();
+          window.parent.location.hash = hash;
+        }
+      };
+      return a;
+    }
+
+    function fetchExceptions() {
+      if (!myApi) return;
+      var startStr = document.getElementById('start-date').value;
+      var endStr = document.getElementById('end-date').value;
+      var gSel = document.getElementById('group-filter').value;
+      var dSel = document.getElementById('driver-filter').value;
+      var rSel = document.getElementById('rule-filter').value;
+      var groupingType = document.querySelector('input[name="summary_group"]:checked').value;
+      
+      if (!startStr || !endStr) return alert('Please select both start and end dates.');
+      
+      setLoading(true, 'Fetching targeted exceptions... (This may take a few seconds)');
+      document.getElementById('header-entity').textContent = groupingType === 'asset' ? 'Asset' : 'Driver (Email)';
+      document.getElementById('error-state').style.display = 'none';
+
+      var fromDate = new Date(startStr + 'T00:00:00').toISOString();
+      var toDate = new Date(endStr + 'T23:59:59').toISOString();
+
+      var validGroups = {};
+      if (gSel !== 'all') {
+        function col(id) { 
+          validGroups[id] = true; 
+          var g = maps.group[id]; 
+          if (g && g.children) g.children.forEach(function(c) { col(c.id); }); 
+        }
+        col(gSel);
+      }
+
+      var ruleIdsToFetch = Object.keys(activeRuleMap);
+      if (rSel !== 'all') {
+          ruleIdsToFetch = ruleIdsToFetch.filter(function(id) { return activeRuleMap[id] === rSel; });
+      }
+
+      var calls = ruleIdsToFetch.map(function(id) {
+          var searchObj = { fromDate: fromDate, toDate: toDate, ruleSearch: { id: id } };
+          
+          if (dSel !== 'all') {
+              searchObj.userSearch = { id: dSel };
+              debugLog('API Filter -> Specific Driver: ' + dSel);
+          } else if (gSel !== 'all') {
+              if (groupingType === 'asset') {
+                  searchObj.deviceSearch = { groups: [{ id: gSel }] };
+                  debugLog('API Filter -> Device Group: ' + gSel);
+              } else {
+                  searchObj.userSearch = { groups: [{ id: gSel }] };
+                  debugLog('API Filter -> User Group: ' + gSel);
+              }
+          }
+
+          return ['Get', {
+              typeName: 'ExceptionEvent',
+              search: searchObj,
+              resultsLimit: 5000 
+          }];
+      });
+
+      setTimeout(function() {
+          myApi.multiCall(calls, function(results) {
+            var events = [];
+            results.forEach(function(res) {
+                if (res && res.length > 0) events = events.concat(res);
+            });
+
+            debugLog('Successfully downloaded ' + events.length + ' events.');
+            debugSample('events', events);
+
+            var filteredEvents = [];
+            events.forEach(function(ev) {
+              if (gSel !== 'all') {
+                var usr = maps.user[ev.driver ? ev.driver.id : ''] || {};
+                var dev = maps.device[ev.device ? ev.device.id : ''] || {};
+                var rG = (usr.companyGroups && usr.companyGroups[0]) ? usr.companyGroups[0].id : ((dev.groups && dev.groups[0]) ? dev.groups[0].id : null);
+                if (!rG || !validGroups[rG]) return;
+              }
+              if (dSel !== 'all' && (ev.driver ? ev.driver.id : 'UnknownDriverId') !== dSel) return;
+
+              var ruleName = activeRuleMap[ev.rule.id];
+              if (!ruleName) return; 
+
+              filteredEvents.push(ev);
+            });
+
+            if (filteredEvents.length === 0) {
+              setLoading(false);
+              showError('No exceptions found for this timeframe matching your filters.');
+              document.getElementById('table-container').style.display = 'none';
+              return;
+            }
+
+            var statsByEntity = {};
+            filteredEvents.forEach(function(ev) {
+              var entityId = groupingType === 'asset' ? ev.device.id : (ev.driver ? ev.driver.id : 'UnknownDriverId');
+              
+              if (!statsByEntity[entityId]) {
+                var name = 'Unknown';
+                if (groupingType === 'asset') {
+                  var dev = maps.device[entityId] || { name: 'Unknown Device' };
+                  name = dev.name;
+                } else {
+                  var usr = maps.user[entityId] || {};
+                  name = usr.firstName ? (usr.firstName + ' ' + usr.lastName) : (usr.name || 'Unknown Driver');
+                  if (usr.name && usr.name !== 'UnknownDriverId') name += ' (' + usr.name + ')';
+                }
+                statsByEntity[entityId] = { id: entityId, name: name, count: 0, durationMs: 0, distance: 0, events: [] };
+              }
+              
+              statsByEntity[entityId].count++;
+              statsByEntity[entityId].events.push(ev);
+              statsByEntity[entityId].distance += (ev.distance || 0);
+              var st = new Date(ev.activeFrom).getTime(), en = new Date(ev.activeTo).getTime();
+              if (!isNaN(st) && !isNaN(en)) statsByEntity[entityId].durationMs += (en - st);
+            });
+
+            var summaryArray = Object.keys(statsByEntity).map(function(k) { return statsByEntity[k]; });
+            summaryArray.sort(function(a, b) { return b.count - a.count; });
+
+            setLoading(false);
+            var tbody = document.getElementById('exceptions-body');
+            tbody.innerHTML = '';
+            document.getElementById('table-container').style.display = 'block';
+            
+            summaryArray.forEach(function(stat, index) {
+              var tr = document.createElement('tr');
+              // RESTORED: Hover pointer
+              tr.style.cssText = 'border-bottom:1px solid #eee; background:#fff; cursor:pointer;';
+              tr.onmouseover = function() { tr.style.background = '#f9fafb'; };
+              tr.onmouseout = function() { tr.style.background = '#fff'; };
+              
+              var tdIcon = document.createElement('td');
+              // RESTORED: Play icon
+              tdIcon.style.cssText = 'padding:12px; color:#888; text-align:center; user-select:none;';
+              tdIcon.textContent = '▶';
+              
+              var tdName = document.createElement('td'); tdName.style.padding = '12px 15px'; tdName.textContent = stat.name;
+              var tdCount = document.createElement('td'); tdCount.style.padding = '12px 15px'; tdCount.textContent = stat.count;
+              var tdDuration = document.createElement('td'); tdDuration.style.padding = '12px 15px'; tdDuration.textContent = formatDuration(stat.durationMs);
+              var tdDistance = document.createElement('td'); tdDistance.style.padding = '12px 15px'; tdDistance.textContent = stat.distance.toFixed(2);
+
+              tr.appendChild(tdIcon);
+              tr.appendChild(tdName);
+              tr.appendChild(tdCount);
+              tr.appendChild(tdDuration);
+              tr.appendChild(tdDistance);
+              tbody.appendChild(tr);
+
+              // RESTORED: The hidden details container
+              var detailTr = document.createElement('tr');
+              detailTr.style.display = 'none';
+              detailTr.style.background = '#fdfdfd';
+              var detailTd = document.createElement('td');
+              detailTd.colSpan = 5;
+              detailTd.style.padding = '15px 30px';
+              
+              var detailContainer = document.createElement('div');
+              detailContainer.id = 'details-' + index;
+              detailTd.appendChild(detailContainer);
+              detailTr.appendChild(detailTd);
+              tbody.appendChild(detailTr);
+
+              // RESTORED: The click handler to toggle it open and fetch locations
+              tr.onclick = function() {
+                var isHidden = detailTr.style.display === 'none';
+                detailTr.style.display = isHidden ? 'table-row' : 'none';
+                tdIcon.textContent = isHidden ? '▼' : '▶';
+                if (isHidden) renderDetails('details-' + index, stat.events, stat.name, index);
+              };
+            });
+
+          }, function(err) {
+            debugLog('ERROR: ' + String(err));
+            setLoading(false);
+            showError('Failed to load exception events.');
+          });
+      }, 100);
+    }
+
+    // --- Detail Rendering Functions (Untouched from v0.5) ---
+
+    function triggerHotspotAnalysis(containerId, events, limit) {
+      var container = document.getElementById(containerId);
+      var eventCount = Math.min(events.length, limit);
+      container.innerHTML = '<div style="padding:20px;text-align:center;"><div style="margin-bottom:8px;font-weight:bold;">Building Map...</div><div style="font-size:12px;color:#666;">Locating the top ' + eventCount + ' events.</div></div>';
+
+      var sample = events.slice(0, limit);
+      var calls = sample.map(function(ev) {
+        return ['Get', { typeName: 'LogRecord', search: { deviceSearch: { id: ev.device.id }, fromDate: ev.activeFrom, toDate: ev.activeTo }, resultsLimit: 1 }];
+      });
+
+      myApi.multiCall(calls, function(logRes) {
+        var coords = [], validLogs = [];
+        logRes.forEach(function(res, i) {
+          if (res && res[0]) {
+            var pt = { x: res[0].longitude, y: res[0].latitude };
+            coords.push(pt);
+            validLogs.push({ pt: pt, event: sample[i] });
+          }
+        });
+
+        if (coords.length === 0) {
+          container.innerHTML = '<div style="padding:15px; color:#e74c3c; text-align:center;">No GPS log records found for these exceptions.</div>';
+          return;
+        }
+
+        myApi.call('GetAddresses', { coordinates: coords }, function(addrRes) {
+          var streetCounts = {};
+          addrRes.forEach(function(addr, k) {
+            var raw = (addr.street && addr.street.trim() !== '') ? addr.street : (addr.formattedAddress ? addr.formattedAddress.split(',')[0] : 'Unknown');
+            var clean = raw.replace(/^\s*\d+[a-zA-Z]?\s+/, '').trim() || 'Unknown Road';
+            streetCounts[clean] = (streetCounts[clean] || 0) + 1;
+            validLogs[k].streetName = clean;
+          });
+
+          var sorted = Object.keys(streetCounts).map(function(k) { return { name: k, count: streetCounts[k] }; }).sort(function(a,b) { return b.count - a.count; });
+
+          container.innerHTML = '<div style="display:flex;gap:10px;height:400px;padding-top:10px;"><div id="map-' + containerId + '" style="flex:2;border-radius:4px;border:1px solid #ccc;"></div><div style="flex:1;overflow-y:auto;background:#fff;border:1px solid #ccc;border-radius:4px;padding:0;"><table style="width:100%;font-size:12px;border-collapse:collapse;"><thead style="position:sticky;top:0;background:#eee;"><tr><th style="padding:8px;text-align:left;">Road</th><th style="padding:8px;text-align:center;">#</th></tr></thead><tbody id="street-rows-' + containerId + '"></tbody></table></div></div>';
+
+          var tbody = document.getElementById('street-rows-' + containerId);
+          var boundsByStreet = {};
+          
+          sorted.forEach(function(s) {
+            var tr = document.createElement('tr');
+            tr.style.cursor = 'pointer';
+            tr.style.borderBottom = '1px solid #f0f0f0';
+            tr.onmouseover = function() { this.style.background = '#f9fafb'; };
+            tr.onmouseout = function() { this.style.background = ''; };
+            tr.innerHTML = '<td style="padding:8px;color:#2563eb;text-decoration:underline;">' + s.name + '</td><td style="padding:8px;text-align:center;font-weight:bold;">' + s.count + '</td>';
+            tbody.appendChild(tr);
+            tr.onclick = function() { if(boundsByStreet[s.name]) map.fitBounds(boundsByStreet[s.name], {padding: [30,30], maxZoom: 16}); };
+          });
+
+          var map = L.map('map-' + containerId);
+          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+          var allB = L.latLngBounds();
+          
+          validLogs.forEach(function(v) {
+            var ll = [v.pt.y, v.pt.x];
+            var devName = maps.device[v.event.device.id] ? maps.device[v.event.device.id].name : 'Vehicle';
+            L.marker(ll).addTo(map).bindPopup('<b>'+devName+'</b><br>Road: '+v.streetName);
+            allB.extend(ll);
+            if(!boundsByStreet[v.streetName]) boundsByStreet[v.streetName] = L.latLngBounds();
+            boundsByStreet[v.streetName].extend(ll);
+          });
+          
+          if (validLogs.length > 0) map.fitBounds(allB, { padding: [20, 20] });
+        });
+      });
+    }
+
+    function buildDetailsTable(container, allEvents, displayEvents, idx) {
+      var hId = 'hotspot-' + idx;
+      var btnContainer = document.createElement('div');
+      btnContainer.style.cssText = 'margin-bottom:15px; display:flex; gap:10px;';
+      
+      var btnAnalyze = document.createElement('button');
+      btnAnalyze.textContent = '📍 Analyze Locations (Pins)';
+      btnAnalyze.style.cssText = 'background:#10b981; color:#fff; border:none; padding:8px 16px; border-radius:4px; cursor:pointer; font-weight:bold;';
+      btnAnalyze.onclick = function(e) { e.stopPropagation(); triggerHotspotAnalysis(hId, allEvents, 200); };
+      btnContainer.appendChild(btnAnalyze);
+      
+      var mapContainer = document.createElement('div');
+      mapContainer.id = hId;
+      
+      var table = document.createElement('table');
+      table.style.cssText = 'width:100%; border-collapse:collapse; background:#fdfdfd; font-size:12px; border:1px solid #ddd;';
+      table.innerHTML = '<thead style="background:#eee; color:#555;"><tr><th style="padding:8px;text-align:left;">Date & Time</th><th style="padding:8px;text-align:left;">Rule</th><th style="padding:8px;text-align:left;">Asset</th><th style="padding:8px;text-align:left;">Driver</th><th style="padding:8px;text-align:left;">Location</th><th style="padding:8px;text-align:left;">Action</th></tr></thead>';
+      var tbody = document.createElement('tbody');
+      
+      displayEvents.forEach(function(ev) {
+        var tr = document.createElement('tr');
+        tr.style.borderBottom = '1px solid #eee';
+
+        var dev = maps.device[ev.device.id] || { name: 'Unknown Device' };
+        var usr = maps.user[ev.driver ? ev.driver.id : ''] || {};
+        var rName = maps.rule[ev.rule.id] ? maps.rule[ev.rule.id].name : (activeRuleMap[ev.rule.id] || 'Unknown Rule');
+        var dt = new Date(ev.activeFrom).toLocaleString();
+        var addrText = ev._address || 'Location unavailable';
+
+        var tdDate = document.createElement('td'); tdDate.style.padding = '8px'; tdDate.textContent = dt;
+        var tdRule = document.createElement('td'); tdRule.style.padding = '8px'; tdRule.textContent = rName;
+        
+        var tdAsset = document.createElement('td'); tdAsset.style.padding = '8px';
+        tdAsset.appendChild(createLink(dev.name, 'device,id:' + ev.device.id, false));
+
+        var tdDriver = document.createElement('td'); tdDriver.style.padding = '8px';
+        var driverName = usr.firstName ? (usr.firstName + ' ' + usr.lastName) : (usr.name || 'Unknown Driver');
+        var emailDisplay = (usr.name && usr.name !== 'UnknownDriverId' && usr.name !== driverName) ? ' (' + usr.name + ')' : '';
+        
+        var driverLink = createLink(driverName, 'user,id:' + (ev.driver ? ev.driver.id : ''), false);
+        tdDriver.appendChild(driverLink);
+        if (emailDisplay) {
+            var span = document.createElement('span');
+            span.style.color = '#666';
+            span.textContent = emailDisplay;
+            tdDriver.appendChild(span);
+        }
+
+        var tdLoc = document.createElement('td'); 
+        tdLoc.style.padding = '8px'; 
+        tdLoc.style.color = '#555';
+        tdLoc.textContent = addrText;
+
+        var tdAction = document.createElement('td'); tdAction.style.padding = '8px';
+        tdAction.appendChild(createLink('View Exact Event', 'exception,id:' + ev.id + ',runByDevice:!t,tab:overview', true));
+
+        tr.appendChild(tdDate);
+        tr.appendChild(tdRule);
+        tr.appendChild(tdAsset);
+        tr.appendChild(tdDriver);
+        tr.appendChild(tdLoc);
+        tr.appendChild(tdAction);
+        tbody.appendChild(tr);
+      });
+
+      table.appendChild(tbody);
+      
+      container.innerHTML = ''; 
+      container.appendChild(btnContainer);
+      container.appendChild(mapContainer);
+      container.appendChild(table);
+      
+      if (allEvents.length > 100) {
+        var capMsg = document.createElement('div');
+        capMsg.style.cssText = 'padding:10px; text-align:center; color:#e67e22; font-style:italic; font-size:12px;';
+        capMsg.textContent = 'Showing first 100 events below to prevent browser lag.';
+        container.appendChild(capMsg);
+      }
+    }
+
+    function renderDetails(id, events, entityName, idx) {
+      var c = document.getElementById(id);
+      if (c.hasAttribute('data-loaded')) return;
+      c.setAttribute('data-loaded', 'true');
+      
+      c.innerHTML = '<div style="padding:20px; text-align:center; color:#666;">Loading location data for events...</div>';
+
+      var displayEvents = events.slice(0, 100);
+      var calls = displayEvents.map(function(ev) {
+        return ['Get', { typeName: 'LogRecord', search: { deviceSearch: { id: ev.device.id }, fromDate: ev.activeFrom, toDate: ev.activeTo }, resultsLimit: 1 }];
+      });
+
+      myApi.multiCall(calls, function(logRes) {
+        var coords = [];
+        var coordMap = {};
+        logRes.forEach(function(res, i) {
+          if (res && res[0]) {
+            coords.push({ x: res[0].longitude, y: res[0].latitude });
+            coordMap[i] = coords.length - 1;
+          }
+        });
+
+        if (coords.length > 0) {
+          myApi.call('GetAddresses', { coordinates: coords }, function(addrRes) {
+            displayEvents.forEach(function(ev, i) {
+               var cIdx = coordMap[i];
+               if (cIdx !== undefined && addrRes[cIdx]) {
+                   ev._address = addrRes[cIdx].formattedAddress || 'Unknown Location';
+               } else {
+                   ev._address = 'Location not found';
+               }
+            });
+            buildDetailsTable(c, events, displayEvents, idx);
+          }, function(err) {
+            displayEvents.forEach(function(ev) { ev._address = 'Address lookup failed'; });
+            buildDetailsTable(c, events, displayEvents, idx);
+          });
+        } else {
+           displayEvents.forEach(function(ev) { ev._address = 'No GPS data'; });
+           buildDetailsTable(c, events, displayEvents, idx);
+        }
+      }, function(err) {
+         displayEvents.forEach(function(ev) { ev._address = 'GPS lookup failed'; });
+         buildDetailsTable(c, events, displayEvents, idx);
+      });
+    }
+
+    function setLoading(isLoad, msg) {
+      var el = document.getElementById('loading-state');
+      var textEl = document.getElementById('loading-text');
+      var intro = document.getElementById('intro-state');
+      if (isLoad) {
+        el.style.display = 'block';
+        textEl.textContent = msg || 'Loading...';
+        document.getElementById('table-container').style.display = 'none';
+        if (intro) intro.style.display = 'none';
+      } else {
+        el.style.display = 'none';
+      }
+    }
+
+    function showError(msg) {
+      var errEl = document.getElementById('error-state');
+      errEl.style.display = 'block';
+      errEl.textContent = msg;
+    }
+
+    geotab.addin["exceptions-summary"] = function() {
+      return {
+        initialize: function(api, state, callback) {
+          myApi = api;
+          debugLog('Initializing v0.9 (Restored Row Expansion)...');
+          
+          var now = new Date();
+          var yesterday = new Date(now.getTime() - (24 * 60 * 60 * 1000));
+          document.getElementById('start-date').value = formatLocalDate(yesterday);
+          document.getElementById('end-date').value = formatLocalDate(now);
+          
+          document.getElementById('btn-refresh').addEventListener('click', fetchExceptions);
+          document.getElementById('group-filter').addEventListener('change', updateDriverDropdown);
+
+          api.getSession(function(session) {
+            var dbName = session.database || (session.credentials && session.credentials.database) || "unknown";
+            var currentDb = dbName.toLowerCase();
+            debugLog('Running in normalized database: ' + currentDb);
+
+            var databaseRuleIds = {
+              "cummins_inc": {
+                "RuleHarshBrakingId": "Harsh Braking",
+                "aBbSlkgNqCk2FX7IyHuZUEA": "Seatbelt Exception",
+                "aYK9YOfCwLEObDO7UMtn8vA": "Speeding >10kmhr >20s"
+              },
+              "cummins_emea": {
+                "RuleHarshBrakingId": "Harsh Braking",
+                "RuleSeatbeltId": "Seatbelt Exception",
+                "aj0Wu1i51t0KhffdIkh7ESA": "Speeding (>10% >20s)"
+              },
+              "cummins_apac_fleet": {
+                "RuleHarshBrakingId": "Harsh Braking",
+                "RuleSeatbeltId": "Seatbelt Exception",
+                "RulePostedSpeedingId": "Speeding (>10% >20s)"
+              }
+            };
+
+            activeRuleMap = databaseRuleIds[currentDb] || {
+              "RuleHarshBrakingId": "Harsh Braking",
+              "RuleSeatbeltId": "Seatbelt Exception",
+              "RulePostedSpeedingId": "Speeding (>10% >20s)"
+            };
+
+            var ruleSelect = document.getElementById('rule-filter');
+            ruleSelect.innerHTML = '<option value="all">All Safety Rules</option>';
+            Object.keys(activeRuleMap).forEach(function(ruleId) {
+                var opt = document.createElement('option');
+                opt.value = activeRuleMap[ruleId];
+                opt.textContent = activeRuleMap[ruleId];
+                ruleSelect.appendChild(opt);
+            });
+
+            api.multiCall([
+              ['Get', { typeName: 'Rule' }],
+              ['Get', { typeName: 'Device' }],
+              ['Get', { typeName: 'User' }],
+              ['Get', { typeName: 'Group' }]
+            ], function(results) {
+              results[0].forEach(function(r) { maps.rule[r.id] = r; });
+              results[1].forEach(function(d) { maps.device[d.id] = d; });
+              results[2].forEach(function(u) { maps.user[u.id] = u; });
+              
+              var groupSelect = document.getElementById('group-filter');
+              var sortedGroups = results[3].slice().sort(function(a, b) { return a.name.localeCompare(b.name); });
+              sortedGroups.forEach(function(g) {
+                maps.group[g.id] = g;
+                var opt = document.createElement('option');
+                opt.value = g.id;
+                opt.textContent = g.name;
+                groupSelect.appendChild(opt);
+              });
+              
+              updateDriverDropdown();
+              document.getElementById('loading-state').style.display = 'none';
+              callback();
+            }, function(err) {
+              debugLog('ERROR loading references: ' + String(err));
+              showError('Failed to load system references.');
+              callback();
+            });
+          }); 
+        },
+        focus: function(api, state) {},
+        blur: function(api, state) {}
+      };
+    };
+  </script>
+</body>
+</html>
