@@ -440,7 +440,7 @@
       btnContainer.style.cssText = 'margin-bottom:15px; display:flex; gap:10px;';
       
       var btnAnalyze = document.createElement('button');
-      btnAnalyze.textContent = '📍 Analyze Locations (Pins)';
+      btnAnalyze.textContent = '📍 Analyze Locations (Leaflet)';
       btnAnalyze.style.cssText = 'background:#10b981; color:#fff; border:none; padding:8px 16px; border-radius:4px; cursor:pointer; font-weight:bold;';
       btnAnalyze.onclick = function(e) { e.stopPropagation(); triggerHotspotAnalysis(hId, allEvents, 200); };
       btnContainer.appendChild(btnAnalyze);
